@@ -234,7 +234,7 @@ class FaceImageIter(io.DataIter):
           #_label = _batch.label[0].asnumpy()
           #data[ba:bb,:,:,:] = _data
           #label[ba:bb] = _label
-          for i in xrange(ba, bb):
+          for i in range(ba, bb):
             #print(ba, bb, self.triplet_cur, i, len(self.triplet_seq))
             _idx = self.triplet_seq[i+self.triplet_cur]
             s = self.imgrec.read_idx(_idx)
@@ -269,7 +269,7 @@ class FaceImageIter(io.DataIter):
         self.times[1] += self.time_elapsed()
         self.time_reset()
         nrof_images_per_class = [1]
-        for i in xrange(1, bag_size):
+        for i in range(1, bag_size):
           if tag[i][0]==tag[i-1][0]:
             nrof_images_per_class[-1]+=1
           else:
@@ -283,7 +283,7 @@ class FaceImageIter(io.DataIter):
           if bb>len(triplets):
             break
           _triplets = triplets[ba:bb]
-          for i in xrange(3):
+          for i in range(3):
             for triplet in _triplets:
               _pos = triplet[i]
               _idx = tag[_pos][1]
@@ -306,7 +306,7 @@ class FaceImageIter(io.DataIter):
           print('loading batch',batch_num, ba)
         bb = min(ba+self.batch_size, len(self.oseq))
         _count = bb-ba
-        for i in xrange(_count):
+        for i in range(_count):
           idx = self.oseq[i+ba]
           s = self.imgrec.read_idx(idx)
           header, img = recordio.unpack(s)
@@ -323,7 +323,7 @@ class FaceImageIter(io.DataIter):
         if X is None:
           X = np.zeros( (len(self.id2range), nembedding.shape[1]), dtype=np.float32 )
         nplabel = label.asnumpy()
-        for i in xrange(_count):
+        for i in range(_count):
           ilabel = int(nplabel[i])
           #print(ilabel, ilabel.__class__)
           X[ilabel] += nembedding[i]
@@ -331,14 +331,14 @@ class FaceImageIter(io.DataIter):
       X = sklearn.preprocessing.normalize(X)
       d = X.shape[1]
       t = AnnoyIndex(d, metric='euclidean')
-      for i in xrange(X.shape[0]):
+      for i in range(X.shape[0]):
         t.add_item(i, X[i])
       print('start to build index')
       t.build(20)
       print(X.shape)
       k = self.per_identities
       self.seq = []
-      for i in xrange(X.shape[0]):
+      for i in range(X.shape[0]):
         nnlist = t.get_nns_by_item(i, k)
         assert nnlist[0]==i
         for _label in nnlist:
@@ -350,7 +350,7 @@ class FaceImageIter(io.DataIter):
             random.shuffle(_list)
           else:
             _list = np.random.choice(_list, self.images_per_identity, replace=False)
-          for i in xrange(self.images_per_identity):
+          for i in range(self.images_per_identity):
             _idx = _list[i%len(_list)]
             self.seq.append(_idx)
       #faiss_params = [20,5]
@@ -365,9 +365,9 @@ class FaceImageIter(io.DataIter):
       #D, I = index.search(X, k)     # actual search
       #print(I.shape)
       #self.seq = []
-      #for i in xrange(I.shape[0]):
+      #for i in range(I.shape[0]):
       #  #assert I[i][0]==i
-      #  for j in xrange(k):
+      #  for j in range(k):
       #    _label = I[i][j]
       #    assert _label<len(self.id2range)
       #    _id = self.header0[0]+_label
@@ -377,7 +377,7 @@ class FaceImageIter(io.DataIter):
       #      random.shuffle(_list)
       #    else:
       #      _list = np.random.choice(_list, self.images_per_identity, replace=False)
-      #    for i in xrange(self.images_per_identity):
+      #    for i in range(self.images_per_identity):
       #      _idx = _list[i%len(_list)]
       #      self.seq.append(_idx)
 
@@ -393,7 +393,7 @@ class FaceImageIter(io.DataIter):
             idlist = []
             for _id,v in self.id2range.iteritems():
               idlist.append((_id,range(*v)))
-            for r in xrange(self.repeat):
+            for r in range(self.repeat):
               if r%10==0:
                 print('repeat', r)
               if self.shuffle:
@@ -406,7 +406,7 @@ class FaceImageIter(io.DataIter):
                   random.shuffle(_list)
                 else:
                   _list = np.random.choice(_list, self.images_per_identity, replace=False)
-                for i in xrange(self.images_per_identity):
+                for i in range(self.images_per_identity):
                   _idx = _list[i%len(_list)]
                   self.seq.append(_idx)
           else:
@@ -470,7 +470,7 @@ class FaceImageIter(io.DataIter):
     def mirror_aug(self, img):
       _rd = random.randint(0,1)
       if _rd==1:
-        for c in xrange(img.shape[2]):
+        for c in range(img.shape[2]):
           img[:,:,c] = np.fliplr(img[:,:,c])
       return img
 
