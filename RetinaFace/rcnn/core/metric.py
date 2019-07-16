@@ -158,7 +158,6 @@ class RPNL1LossMetric(mx.metric.EvalMetric):
         # calculate num_inst (average on those fg anchors)
         num_inst = np.sum(bbox_weight > 0) / (bbox_weight.shape[1]/config.NUM_ANCHORS)
         #print('in_metric log', bbox_loss.shape, num_inst, file=sys.stderr)
-
         self.sum_metric += np.sum(bbox_loss)
         self.num_inst += num_inst
 

@@ -503,7 +503,7 @@ class AA:
       return ret
 
   def assign_anchor_fpn(self, gt_label, im_info, landmark=False, prefix='face', select_stride=0):
-
+    DEBUG = False
     #ta = datetime.datetime.now()
     im_info = im_info[0]
     gt_boxes = gt_label['gt_boxes']
@@ -614,7 +614,7 @@ class AA:
 
     #print('anchor stat', num_fg, num_bg)
 
-
+    bbox_anchors = anchors.copy()
     bbox_targets = np.zeros((len(inds_inside), bbox_pred_len), dtype=np.float32)
     if gt_boxes.size > 0:
         #print('GT', gt_boxes.shape, gt_boxes[argmax_overlaps, :4].shape)
@@ -667,6 +667,8 @@ class AA:
     # map up to original set of anchors
     #print(labels.shape, total_anchors, inds_inside.shape, inds_inside[0], inds_inside[-1])
     labels = AA._unmap(labels, total_anchors, inds_inside, fill=-1)
+
+    bbox_anchors = AA._unmap(bbox_anchors, total_anchors, inds_inside, fill=0)
     bbox_targets = AA._unmap(bbox_targets, total_anchors, inds_inside, fill=0)
     bbox_weights = AA._unmap(bbox_weights, total_anchors, inds_inside, fill=0)
     if landmark:
@@ -687,6 +689,7 @@ class AA:
 
     # resahpe
     label_list = list()
+    bbox_anchor_list = list()
     bbox_target_list = list()
     bbox_weight_list = list()
     if landmark:
@@ -709,6 +712,7 @@ class AA:
         #STAT[stride]+=n_fg
         #if STAT[0]%100==0:
         #  print('rpn_stat', STAT, file=sys.stderr)
+        bbox_anchor = bbox_anchors[sum(anchors_num_range[:i+1]):sum(anchors_num_range[:i+1])+anchors_num_range[i+1]]
         bbox_target = bbox_targets[sum(anchors_num_range[:i+1]):sum(anchors_num_range[:i+1])+anchors_num_range[i+1]]
         bbox_weight = bbox_weights[sum(anchors_num_range[:i+1]):sum(anchors_num_range[:i+1])+anchors_num_range[i+1]]
         if landmark:
@@ -717,9 +721,11 @@ class AA:
 
         _label = _label.reshape((1, feat_height, feat_width, A)).transpose(0, 3, 1, 2)
         _label = _label.reshape((1, A * feat_height * feat_width))
+        bbox_anchor = bbox_anchor.reshape((1, feat_height*feat_width, A * bbox_pred_len)).transpose(0, 2, 1)
         bbox_target = bbox_target.reshape((1, feat_height*feat_width, A * bbox_pred_len)).transpose(0, 2, 1)
         bbox_weight = bbox_weight.reshape((1, feat_height*feat_width, A * bbox_pred_len)).transpose((0, 2, 1))
         label['%s_label_stride%d'%(prefix, stride)] = _label
+        #label['%s_bbox_anchor_stride%d'%(prefix,stride)] = bbox_anchor
         label['%s_bbox_target_stride%d'%(prefix,stride)] = bbox_target
         label['%s_bbox_weight_stride%d'%(prefix,stride)] = bbox_weight
         if landmark:
@@ -730,6 +736,7 @@ class AA:
         #print('in_rpn', stride,_label.shape, bbox_target.shape, bbox_weight.shape, file=sys.stderr)
         label_list.append(_label)
         #print('DD', _label.shape)
+        bbox_anchor_list.append(bbox_anchor)
         bbox_target_list.append(bbox_target)
         bbox_weight_list.append(bbox_weight)
         if landmark:
@@ -737,12 +744,14 @@ class AA:
           landmark_weight_list.append(landmark_weight)
 
     label_concat = np.concatenate(label_list, axis=1)
+    bbox_anchor_concat = np.concatenate(bbox_anchor_list, axis=2)
     bbox_target_concat = np.concatenate(bbox_target_list, axis=2)
     bbox_weight_concat = np.concatenate(bbox_weight_list, axis=2)
     #fg_inds = np.where(label_concat[0] == 1)[0]
     #print('fg_inds_in_rpn2', fg_inds, file=sys.stderr)
 
     label.update({'%s_label'%prefix: label_concat,
+            #'%s_bbox_anchor'%prefix: bbox_anchor_concat,
             '%s_bbox_target'%prefix: bbox_target_concat,
             '%s_bbox_weight'%prefix: bbox_weight_concat}
             )

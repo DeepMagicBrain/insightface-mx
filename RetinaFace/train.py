@@ -58,9 +58,9 @@ def train_net(args, ctx, pretrained, epoch, prefix, begin_epoch, end_epoch,
     roidbs = [load_gt_roidb(args.dataset, image_set, args.root_path, args.dataset_path,
                             flip=not args.no_flip)
               for image_set in image_sets]
-    #roidb = merge_roidb(roidbs)
+    roidb = merge_roidb(roidbs)
     #roidb = filter_roidb(roidb)
-    roidb = roidbs[0]
+    #roidb = roidbs[0]
 
     # load symbol
     #sym = eval('get_' + args.network + '_train')(num_classes=config.NUM_CLASSES, num_anchors=config.NUM_ANCHORS)
@@ -111,6 +111,7 @@ def train_net(args, ctx, pretrained, epoch, prefix, begin_epoch, end_epoch,
 
     # infer shape
     data_shape_dict = dict(train_data.provide_data + train_data.provide_label)
+    print(data_shape_dict)
     arg_shape, out_shape, aux_shape = sym.infer_shape(**data_shape_dict)
     arg_shape_dict = dict(zip(sym.list_arguments(), arg_shape))
     out_shape_dict = dict(zip(sym.list_outputs(), out_shape))
@@ -261,6 +262,12 @@ def train_net(args, ctx, pretrained, epoch, prefix, begin_epoch, end_epoch,
           opt.lr *= step[1]
           print('lr change to', opt.lr,' in batch', mbatch, file=sys.stderr)
           break
+
+      
+      if mbatch > 0 and mbatch % 5000 == 0:
+        print('saving checkpoint', mbatch, file=sys.stderr)
+        idx = mbatch / 5000 
+        save_model(idx)
 
       if mbatch==lr_steps[-1][0]:
         print('saving final checkpoint', mbatch, file=sys.stderr)

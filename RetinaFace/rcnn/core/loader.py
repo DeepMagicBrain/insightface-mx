@@ -64,6 +64,7 @@ class CropLoader(mx.io.DataIter):
           prefixes.append('head')
         names = []
         for prefix in prefixes:
+          #names += [prefix+'_label', prefix+'_bbox_anchor', prefix+'_bbox_target', prefix+'_bbox_weight']
           names += [prefix+'_label', prefix+'_bbox_target', prefix+'_bbox_weight']
           if prefix=='face' and config.FACE_LANDMARK:
             names += [prefix+'_landmark_target', prefix+'_landmark_weight']
@@ -155,11 +156,12 @@ class CropLoader(mx.io.DataIter):
           dummy_label['gt_landmarks'] = dummy_landmarks
         face_label_dict = self.aa.assign_anchor_fpn(dummy_label, dummy_info, config.FACE_LANDMARK, prefix='face')
         label_dict.update(face_label_dict)
-
+        
         label_list = []
         for k in self.label_name:
           label_list.append(label_dict[k])
         label_shape = [(k, tuple([input_batch_size] + list(v.shape[1:]))) for k, v in zip(self.label_name, label_list)]
+        print(label_shape)
         return max_data_shape, label_shape
 
     def get_batch(self):

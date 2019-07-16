@@ -3,6 +3,8 @@ import mxnet.ndarray as nd
 import numpy as np
 from rcnn.config import config
 from rcnn.PY_OP import rpn_fpn_ohem3
+from rcnn.PY_OP import focal_loss
+from rcnn.symbol.losses import giou_loss, focal_loss_mx
 
 def conv_only(from_layer, name, num_filter, kernel=(1,1), pad=(0,0), \
     stride=(1,1), bias_wd_mult=0.0, shared_weight=None, shared_bias = None):
@@ -20,7 +22,7 @@ def conv_only(from_layer, name, num_filter, kernel=(1,1), pad=(0,0), \
   return conv
 
 def conv_deformable(net, num_filter, num_group=1, act_type='relu',name=''):
-  if config.USE_DCN==1:
+  if config.USE_DCN == 1:
     f = num_group*18
     conv_offset = mx.symbol.Convolution(name=name+'_conv_offset', data = net,
                         num_filter=f, pad=(1, 1), kernel=(3, 3), stride=(1, 1))
@@ -170,7 +172,6 @@ def upsampling(data, num_filter, name):
 
 def get_sym_conv(data, sym):
     all_layers = sym.get_internals()
-
     isize = 640
     _, out_shape, _ = all_layers.infer_shape(data = (1,3,isize,isize))
     last_entry = None
@@ -327,6 +328,7 @@ def get_out(conv_fpn_feat, prefix, stride, landmark=False, lr_mult=1.0, shared_v
     ret_group = []
     num_anchors = config.RPN_ANCHOR_CFG[str(stride)]['NUM_ANCHORS']
     label = mx.symbol.Variable(name='%s_label_stride%d'%(prefix,stride))
+    bbox_anchor = mx.symbol.Variable(name='%s_bbox_anchor_stride%d'%(prefix,stride))
     bbox_target = mx.symbol.Variable(name='%s_bbox_target_stride%d'%(prefix,stride))
     bbox_weight = mx.symbol.Variable(name='%s_bbox_weight_stride%d'%(prefix,stride))
     if landmark:
@@ -390,6 +392,8 @@ def get_out(conv_fpn_feat, prefix, stride, landmark=False, lr_mult=1.0, shared_v
       _bbox_weight = mx.sym.tile(anchor_weight, (1,1,bbox_pred_len))
       _bbox_weight = _bbox_weight.reshape((0, -1, A * bbox_pred_len)).transpose((0,2,1))
       bbox_weight = mx.sym.elemwise_mul(bbox_weight, _bbox_weight, name='%s_bbox_weight_mul_stride%s'%(prefix,stride))
+      valid_count = mx.symbol.sum(valid_count)
+      valid_count = valid_count + 0.001 #avoid zero
 
       if landmark:
         _landmark_weight = mx.sym.tile(anchor_weight, (1,1,landmark_pred_len))
@@ -400,24 +404,42 @@ def get_out(conv_fpn_feat, prefix, stride, landmark=False, lr_mult=1.0, shared_v
       #else:
       #  label, bbox_weight, landmark_weight = mx.sym.Custom(op_type='rpn_fpn_ohem2', stride=int(stride), cls_score=rpn_cls_score_reshape, bbox_weight = bbox_weight, landmark_weight=landmark_weight, labels = label)
     #cls loss
-    rpn_cls_prob = mx.symbol.SoftmaxOutput(data=rpn_cls_score_reshape,
-                                           label=label,
-                                           multi_output=True,
-                                           normalization='valid', use_ignore=True, ignore_label=-1,
-                                           grad_scale = lr_mult,
-                                           name='%s_rpn_cls_prob_stride%d'%(prefix,stride))
+    if config.TRAIN.FOCAL_LOSS < 1:
+        rpn_cls_prob = mx.symbol.SoftmaxOutput(data=rpn_cls_score_reshape,
+                                               label=label,
+                                               multi_output=True,
+                                               normalization='valid', use_ignore=True, ignore_label=-1,
+                                               grad_scale = lr_mult,
+                                               name='%s_rpn_cls_prob_stride%d'%(prefix,stride))
+    
+    else:
+        rpn_cls_prob = mx.sym.Custom(op_type='FocalLoss', name='%s_rpn_cls_prob_stride%s' %(prefix, stride), data=rpn_cls_score_reshape, labels=label, gamma= 2,alpha = 0.25) 
+    
+        #rpn_cls_prob, rpn_cls_loss_ = focal_loss_mx(cls_score=rpn_cls_score_reshape,
+        #                                            label=label,
+        #                                            gamma=2,
+        #                                            alpha=0.25)
+        #rpn_cls_loss = mx.sym.MakeLoss(name='%s_rpn_cls_loss_stride%d'%(prefix,stride),
+        #                                data=rpn_cls_loss_, 
+        #                                grad_scale=1.0*lr_mult / (config.TRAIN.RPN_BATCH_SIZE))
     ret_group.append(rpn_cls_prob)
     ret_group.append(mx.sym.BlockGrad(label))
 
-    valid_count = mx.symbol.sum(valid_count)
-    valid_count = valid_count + 0.001 #avoid zero
 
-    #bbox loss
-    bbox_diff = rpn_bbox_pred_reshape-bbox_target
-    bbox_diff = bbox_diff * bbox_weight
-    rpn_bbox_loss_ = mx.symbol.smooth_l1(name='%s_rpn_bbox_loss_stride%d_'%(prefix,stride), scalar=3.0, data=bbox_diff)
+    if config.TRAIN.GIOU_LOSS < 1:
+        #bbox L1_loss
+        bbox_diff = rpn_bbox_pred_reshape-bbox_target
+        bbox_diff = bbox_diff * bbox_weight
+        rpn_bbox_loss_ = mx.symbol.smooth_l1(name='%s_rpn_bbox_loss_stride%d_'%(prefix,stride), scalar=3.0, data=bbox_diff)
+    else:
+        #bbox GIOU_loss
+        rpn_bbox_loss_ = giou_loss(bbox_anchor, rpn_bbox_pred_reshape, bbox_target, bbox_weight, prefix, stride)  
+
     if config.LR_MODE==0:
-      rpn_bbox_loss = mx.sym.MakeLoss(name='%s_rpn_bbox_loss_stride%d'%(prefix,stride), data=rpn_bbox_loss_, grad_scale=1.0*lr_mult / (config.TRAIN.RPN_BATCH_SIZE))
+        if  config.TRAIN.GIOU_LOSS < 1:
+            rpn_bbox_loss = mx.sym.MakeLoss(name='%s_rpn_bbox_loss_stride%d'%(prefix,stride), data=rpn_bbox_loss_, grad_scale=1.0*lr_mult / (config.TRAIN.RPN_BATCH_SIZE))
+        else:
+            rpn_bbox_loss = mx.sym.MakeLoss(name='%s_rpn_bbox_loss_stride%d'%(prefix,stride), data=rpn_bbox_loss_, grad_scale=3.0*lr_mult / (config.TRAIN.RPN_BATCH_SIZE))
     else:
       rpn_bbox_loss_ = mx.symbol.broadcast_div(rpn_bbox_loss_, valid_count)
       rpn_bbox_loss = mx.sym.MakeLoss(name='%s_rpn_bbox_loss_stride%d'%(prefix,stride), data=rpn_bbox_loss_, grad_scale=0.25*lr_mult)
@@ -483,7 +505,7 @@ def get_sym_train(sym):
         shared_vars = [ [None, None], [None, None], [None, None] ]
         ret = get_out(conv_fpn_feat, 'head', stride, False, lr_mult=0.5, shared_vars = shared_vars)
         ret_group += ret
-
+   
     return mx.sym.Group(ret_group)
 
 
